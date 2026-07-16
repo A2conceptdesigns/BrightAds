@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>document.documentElement.classList.add('js')</script>
 <title>Bright ADeaS — Signs built from the inside out | Silang, Cavite</title>
 <meta name="description" content="Bright ADeaS — Advertising, Printing & Fabrication. Premium built-up letters, neon and backlit signage crafted in Silang, Cavite.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -108,7 +109,7 @@ nav.solid{background:rgba(7,7,11,.88);backdrop-filter:blur(14px);border-bottom:1
    ============================================================ */
 #heroTrack{height:520vh;position:relative}
 .hero-sticky{
-  position:sticky;top:0;height:100vh;overflow:hidden;
+  position:sticky;top:0;height:100vh;height:100svh;overflow:hidden;
   display:flex;align-items:center;justify-content:center;
   background:
     radial-gradient(ellipse 90% 60% at 50% 38%,rgba(38,38,60,.55),transparent 70%),
@@ -361,9 +362,10 @@ section{position:relative}
 .sec-title em.amber{color:var(--amber);text-shadow:0 0 26px rgba(255,196,107,.4)}
 .sec-sub{margin-top:16px;color:var(--mut);max-width:58ch;line-height:1.7;font-size:.95rem}
 
-/* reveal on scroll */
-.rv{opacity:0;transform:translateY(34px);transition:opacity .8s cubic-bezier(.2,.7,.3,1),transform .8s cubic-bezier(.2,.7,.3,1)}
-.rv.in{opacity:1;transform:none}
+/* reveal on scroll — hidden state only applies when JS is running, so a
+   script failure can never leave sections invisible */
+.js .rv{opacity:0;transform:translateY(34px);transition:opacity .8s cubic-bezier(.2,.7,.3,1),transform .8s cubic-bezier(.2,.7,.3,1)}
+.js .rv.in{opacity:1;transform:none}
 .rv.d1{transition-delay:.08s}.rv.d2{transition-delay:.16s}.rv.d3{transition-delay:.24s}.rv.d4{transition-delay:.32s}
 
 /* ---------- marquee ---------- */
@@ -384,7 +386,7 @@ section{position:relative}
    ============================================================ */
 #anatomyTrack{height:340vh}
 .anatomy-sticky{
-  position:sticky;top:0;height:100vh;overflow:hidden;
+  position:sticky;top:0;height:100vh;height:100svh;overflow:hidden;
   display:flex;align-items:center;
   background:
     radial-gradient(ellipse 70% 55% at 68% 50%,rgba(30,30,52,.5),transparent 70%),
@@ -642,6 +644,32 @@ footer .mini{font-family:var(--fontDisplay);font-weight:900;font-size:.85rem;let
   background:linear-gradient(90deg,var(--cB),var(--cR),var(--cI),var(--cG),var(--cH),var(--cS));
   -webkit-background-clip:text;background-clip:text;color:transparent;
 }
+
+/* ---------- lite mode (touch devices / weak GPUs) ----------
+   Same design, cheap rendering: fewer glow layers, no film grain,
+   no backdrop blur, no per-frame filters, flat 2D disassembly. */
+.lite .grain,.lite #cursorGlow{display:none}
+.lite .vignette{background:radial-gradient(ellipse at 50% 45%,transparent 60%,rgba(0,0,0,.45) 100%)}
+.lite .nl{
+  animation:none;
+  text-shadow:0 0 5px rgba(255,255,255,.45),0 0 16px var(--c),0 0 38px var(--c);
+}
+.lite .nl.flick{animation:flicker 4.5s linear infinite}
+.lite nav,.lite nav.solid{backdrop-filter:none;background:rgba(7,7,11,.96)}
+.lite .hero-kicker{backdrop-filter:none;background:rgba(20,20,30,.7)}
+.lite .diamond{box-shadow:0 0 14px var(--cDia)}
+.lite .xl-face{text-shadow:0 0 8px rgba(255,255,255,.3),0 0 28px var(--cB)}
+.lite .xl-led{filter:none}
+.lite .sub-strip{text-shadow:0 0 8px rgba(140,170,255,.6)}
+.lite .tag-script{text-shadow:0 0 8px rgba(255,196,107,.7)}
+/* shorter scroll tracks on phones so the story completes at a natural pace */
+@media(max-width:900px){
+  #heroTrack{height:380vh}
+  #anatomyTrack{height:260vh}
+}
+/* while the sign is being taken apart, stop the breathing animation so the
+   JS power-down dimming (inline filter) can take effect */
+.sign.apart .nl{animation:none}
 
 /* ---------- reduced motion ---------- */
 @media (prefers-reduced-motion:reduce){
@@ -980,6 +1008,16 @@ const lerp=(a,b,t)=>a+(b-a)*t;
 const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;           // easeInOutCubic
 const smooth=(p,a,b)=>ease(clamp((p-a)/(b-a),0,1));
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+/* lite mode: touch devices get the same design with cheap rendering */
+const lite=matchMedia('(pointer:coarse)').matches||Math.min(screen.width||1e4,innerWidth)<820;
+if(lite)document.body.classList.add('lite');
+
+/* stable viewport height: ignore the mobile URL-bar show/hide so the
+   scroll-driven animation doesn't jump mid-scroll */
+let VH=innerHeight,VW=innerWidth;
+addEventListener('resize',()=>{
+  if(innerWidth!==VW||Math.abs(innerHeight-VH)>150){VH=innerHeight;VW=innerWidth}
+});
 
 /* ---------- nav / scrollbar / cursor ---------- */
 const nav=document.getElementById('nav');
@@ -993,17 +1031,23 @@ addEventListener('scroll',()=>{
 const glow=document.getElementById('cursorGlow');
 addEventListener('mousemove',e=>{glow.style.left=e.clientX+'px';glow.style.top=e.clientY+'px'});
 
-/* ---------- reveal-on-scroll ---------- */
-const io=new IntersectionObserver(es=>es.forEach(e=>{
-  if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}
-}),{threshold:.12,rootMargin:'0px 0px -8% 0px'});
-document.querySelectorAll('.rv').forEach(el=>io.observe(el));
+/* ---------- reveal-on-scroll (with hard fallback) ---------- */
+if('IntersectionObserver' in window){
+  const io=new IntersectionObserver(es=>es.forEach(e=>{
+    if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}
+  }),{threshold:.12,rootMargin:'0px 0px -8% 0px'});
+  document.querySelectorAll('.rv').forEach(el=>io.observe(el));
+}else{
+  document.querySelectorAll('.rv').forEach(el=>el.classList.add('in'));
+}
+/* if anything in the engine ever throws, un-hide the whole page */
+addEventListener('error',()=>document.documentElement.classList.remove('js'));
 
 /* ---------- hero sparks ---------- */
 const scene=document.querySelector('.scene');
 if(!reduced){
   const cols=['#ff2d78','#00cfff','#ffe600','#39ff14','#ffb400'];
-  for(let i=0;i<26;i++){
+  for(let i=0;i<(lite?10:26);i++){
     const s=document.createElement('span');
     s.className='spark';
     const c=cols[i%cols.length];
@@ -1017,7 +1061,7 @@ if(!reduced){
 /* ---------- scene progress helper ---------- */
 function trackProgress(el){
   const r=el.getBoundingClientRect();
-  const total=r.height-innerHeight;
+  const total=r.height-VH;
   return total<=0?1:clamp(-r.top/total,0,1);
 }
 
@@ -1047,13 +1091,23 @@ function renderHero(p){
   const f=smooth(p,.78,.95);
 
   // letters fly apart & power down
+  // (lite mode: flat 2D transforms, no per-frame filters — mobile GPUs
+  //  choke on repainting large glowing text through 3D + filter changes)
+  const lateFade=smooth(p,.7,.92);
   for(const pc of pieces){
-    pc.el.style.transform=
-      `translate3d(${pc.x*d}vw,${pc.y*d}vh,${pc.z*d}px) `+
-      `rotateX(${pc.rx*d}deg) rotateY(${pc.ry*d}deg) rotateZ(${pc.rz*d}deg)`;
-    pc.el.style.filter=`saturate(${1-d*.8}) brightness(${1-d*.55})`;
-    pc.el.style.opacity=1-smooth(p,.7,.92)*.9;
+    if(lite){
+      pc.el.style.transform=
+        `translate(${pc.x*d}vw,${pc.y*d}vh) rotate(${pc.rz*d}deg)`;
+      pc.el.style.opacity=(1-d*.3)*(1-lateFade*.9);
+    }else{
+      pc.el.style.transform=
+        `translate3d(${pc.x*d}vw,${pc.y*d}vh,${pc.z*d}px) `+
+        `rotateX(${pc.rx*d}deg) rotateY(${pc.ry*d}deg) rotateZ(${pc.rz*d}deg)`;
+      pc.el.style.filter=`saturate(${1-d*.8}) brightness(${1-d*.55})`;
+      pc.el.style.opacity=1-lateFade*.9;
+    }
   }
+  signEl.classList.toggle('apart',d>.04);
   signEl.style.pointerEvents=d>.5?'none':'';
 
   // panel slats slide out
@@ -1101,7 +1155,9 @@ function renderAnatomy(p){
   const d=smooth(p,.08,.6);
   const sf=innerWidth<900?.45:1; // tighter spread on small screens
   layers.forEach(l=>{
-    l.el.style.transform=`translate(${l.ex*d*1.1*sf}vw,${l.ey*d*sf}vh) rotateY(${-14*d}deg) rotateX(${8*d}deg)`;
+    l.el.style.transform=lite
+      ?`translate(${l.ex*d*1.1*sf}vw,${l.ey*d*sf}vh)`
+      :`translate(${l.ex*d*1.1*sf}vw,${l.ey*d*sf}vh) rotateY(${-14*d}deg) rotateX(${8*d}deg)`;
   });
   xtags.forEach((t,i)=>{
     const tp=smooth(p,.28+i*.08,.42+i*.08);
