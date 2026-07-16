@@ -46,7 +46,10 @@ body{
   background:var(--bg);
   color:var(--ink);
   font-family:var(--fontBody);
+  /* clip, not hidden: overflow-x:hidden on body breaks position:sticky
+     in mobile Safari (hidden is kept only as a fallback for old browsers) */
   overflow-x:hidden;
+  overflow-x:clip;
   -webkit-font-smoothing:antialiased;
 }
 ::selection{background:var(--cB);color:#fff}
@@ -671,14 +674,14 @@ footer .mini{font-family:var(--fontDisplay);font-weight:900;font-size:.85rem;let
    JS power-down dimming (inline filter) can take effect */
 .sign.apart .nl{animation:none}
 
-/* ---------- reduced motion ---------- */
+/* ---------- reduced motion ----------
+   Only ambient/self-playing effects are disabled (flicker, sparks, marquee).
+   The scroll-driven story stays: it's user-initiated and is the whole site.
+   NOTE: Android battery saver and iOS/Samsung "reduce animations" set this
+   media query — it must never disable the entire experience. */
 @media (prefers-reduced-motion:reduce){
-  #heroTrack{height:100vh}
-  #anatomyTrack{height:auto}
-  .anatomy-sticky{position:relative;height:auto;padding:90px 0}
-  .nl,.marquee .track,.tag-box.dying{animation:none!important}
-  .rv{opacity:1;transform:none;transition:none}
-  .scroll-cue{display:none}
+  .nl,.marquee .track,.tag-box.dying,.spark,.hero-kicker .pulse,.scroll-cue .wheel::after{animation:none!important}
+  .js .rv{opacity:1;transform:none;transition:none}
 }
 </style>
 </head>
@@ -1177,25 +1180,54 @@ const qHP=QA.get('hp'),qAP=QA.get('ap');
 const hides=(QA.get('hide')||'').split(',');
 if(hides.includes('hero')){heroTrack.style.display='none';document.querySelector('.marquee').style.display='none'}
 if(hides.includes('anatomy')){anatomyTrack.style.display='none'}
-if(!reduced){
-  (function loop(){
+/* ---------- debug overlay (?debug=1) ---------- */
+let dbgEl=null;
+if(QA.has('debug')){
+  dbgEl=document.createElement('div');
+  dbgEl.style.cssText='position:fixed;bottom:8px;left:8px;right:8px;z-index:999;background:rgba(0,0,0,.85);color:#0f0;font:11px/1.5 monospace;padding:6px 8px;border-radius:6px;pointer-events:none;white-space:pre-wrap';
+  document.body.appendChild(dbgEl);
+}
+
+/* ---------- sticky fallback ----------
+   If position:sticky doesn't pin on this browser, collapse the scroll
+   tracks and auto-play both scenes instead, so the take-apart animation
+   always happens on every device. */
+const heroStickyEl=document.querySelector('.hero-sticky');
+const anaStickyEl=document.querySelector('.anatomy-sticky');
+let autoMode=QA.has('forceauto'),heroAutoT0=0,anaAutoT0=0;
+function enableAutoMode(){
+  autoMode=true;heroAutoT0=anaAutoT0=0;
+  heroTrack.style.height='auto';heroStickyEl.style.position='relative';
+  anatomyTrack.style.height='auto';anaStickyEl.style.position='relative';
+}
+if(autoMode)enableAutoMode();
+function checkSticky(p){
+  // while the hero should be pinned, its sticky box must sit at the viewport top
+  if(!autoMode&&p>.1&&p<.8&&heroStickyEl.getBoundingClientRect().top<-40)enableAutoMode();
+}
+
+/* ---------- the loop — runs for everyone; "reduced motion" only
+   disables ambient effects via CSS, never the core experience ---------- */
+(function loop(){
+  if(autoMode){
+    const now=performance.now();
+    if(!heroAutoT0)heroAutoT0=now;                       // hero plays on arrival
+    heroCur=clamp((now-heroAutoT0)/3200,0,1);
+    if(!anaAutoT0&&anatomyTrack.getBoundingClientRect().top<VH*.55)anaAutoT0=now;
+    anaCur=anaAutoT0?clamp((now-anaAutoT0)/2600,0,1):0;  // anatomy plays when reached
+  }else{
     heroP=qHP!==null?+qHP:trackProgress(heroTrack);
+    checkSticky(heroP);
     heroCur=qHP!==null?heroP:lerp(heroCur,heroP,.14);
     if(Math.abs(heroCur-heroP)<.0005)heroCur=heroP;
-    renderHero(heroCur);
-
     anaP=qAP!==null?+qAP:trackProgress(anatomyTrack);
     anaCur=qAP!==null?anaP:lerp(anaCur,anaP,.14);
-    renderAnatomy(anaCur);
-
-    requestAnimationFrame(loop);
-  })();
-}else{
-  renderHero(0);
-  layers.forEach(l=>{l.el.style.transform=`translate(${l.ex}vw,${l.ey}vh)`});
-  xtags.forEach(t=>t.style.opacity=.95);
-  asteps.forEach(s=>s.classList.add('active'));
-}
+  }
+  renderHero(heroCur);
+  renderAnatomy(anaCur);
+  if(dbgEl)dbgEl.textContent=`lite:${lite} reduced:${reduced} auto:${autoMode}\nvw:${innerWidth} vh:${VH} dpr:${devicePixelRatio}\nhero:${heroCur.toFixed(2)} ana:${anaCur.toFixed(2)} y:${Math.round(scrollY)}`;
+  requestAnimationFrame(loop);
+})();
 
 /* deep-link to a scroll position, e.g. ?sp=0.4 (also used for QA captures) */
 const spq=new URLSearchParams(location.search).get('sp');
